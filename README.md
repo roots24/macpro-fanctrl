@@ -1,3 +1,4 @@
+# MAC FANCONTROL
 # macpro-fanctrl
 
 Programma per il controllo manuale e automatico delle ventole su **Mac Pro 5,1** ("cheesegrater") in ambiente Linux.
