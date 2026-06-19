@@ -181,6 +181,7 @@ Se si aggiorna il programma da una versione precedente, il vecchio formato `curv
 
 ### Versione attuale — Miglioramenti applicati
 
+- **gui.py**: pulsante "Curva ON/OFF" rinominato in "Start Profili/Stop Profili", metodo `_toggle_curve` → `_toggle_profile_daemon`, status messages aggiornati da "curva" a "profili"
 - **daemon.py**: aggiunta validazione curve (`interpolate()` fallback 800 RPM se curva invalida), punti ordinati automaticamente
 - **daemon.py**: safety threshold — se temp > 95°C tutte ventole a max RPM della curva, log warning con top 5 temperature
 - **daemon.py**: fallback RPM (min curve) quando sensors di una ventola unavailable

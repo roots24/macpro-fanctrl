@@ -110,9 +110,9 @@ class FanControlGUI:
         ttk.Button(ctrl, text="Set Tutte", command=self._set_all).grid(row=0, column=7, padx=6, pady=2)
 
         ttk.Button(ctrl, text="Auto", command=self._set_auto).grid(row=0, column=8, padx=(18, 4), pady=2)
-        self.curve_btn = ttk.Button(ctrl, text="Curva ON",
-                                    command=self._toggle_curve)
-        self.curve_btn.grid(row=0, column=9, padx=4, pady=2)
+        self.profile_btn = ttk.Button(ctrl, text="Start Profili",
+                                      command=self._toggle_profile_daemon)
+        self.profile_btn.grid(row=0, column=9, padx=4, pady=2)
 
         sep = ttk.Separator(main, orient=tk.HORIZONTAL)
         sep.pack(fill=tk.X, pady=(0, 10))
@@ -180,7 +180,7 @@ class FanControlGUI:
             pid_str = "ON" if pid_on else "OFF"
             self.status_var.set(f"Profilo: {profile_name}  |  PID: {pid_str}")
 
-            self.curve_btn.config(text="Curva OFF" if pid_on else "Curva ON")
+            self.profile_btn.config(text="Stop Profili" if pid_on else "Start Profili")
 
             self.profile_names = list_profiles()
             self.profile_combo["values"] = self.profile_names
@@ -271,10 +271,10 @@ class FanControlGUI:
             remove_pidfile()
         time.sleep(0.3)
         r = subprocess.run(["systemctl", "stop", "macpro-fan"],
-                           capture_output=True, timeout=10)
+                            capture_output=True, timeout=10)
         if not is_daemon_running():
-            self.curve_btn.config(text="Curva ON")
-            self.status_var.set("Curva fermata")
+            self.profile_btn.config(text="Start Profili")
+            self.status_var.set("Profili fermati")
         else:
             self.status_var.set("Errore: impossibile fermare il demone")
 
@@ -286,26 +286,26 @@ class FanControlGUI:
         auto()
         self.status_var.set("Ventole in automatico")
 
-    def _toggle_curve(self):
+    def _toggle_profile_daemon(self):
         if is_daemon_running():
             self._stop_daemon()
         else:
             if os.geteuid() != 0:
-                self.status_var.set("Errore: esegui la GUI con sudo per avviare la curva")
+                self.status_var.set("Errore: esegui la GUI con sudo per avviare i profili")
                 return
             script = get_script_path()
             cmd = [sys.executable, script, "daemon", "--background"]
             proc = subprocess.Popen(cmd)
             time.sleep(0.5)
             if proc.poll() is not None:
-                self.status_var.set(f"Errore avvio curva (exit code {proc.poll()})")
+                self.status_var.set(f"Errore avvio profili (exit code {proc.poll()})")
             else:
                 time.sleep(0.5)
                 if is_daemon_running():
-                    self.curve_btn.config(text="Curva OFF")
-                    self.status_var.set("Curva avviata in background")
+                    self.profile_btn.config(text="Stop Profili")
+                    self.status_var.set("Profili avviati in background")
                 else:
-                    self.status_var.set("Curva non partita - controlla i log")
+                    self.status_var.set("Profili non partiti - controlla i log")
 
 
 def cmd_gui():
