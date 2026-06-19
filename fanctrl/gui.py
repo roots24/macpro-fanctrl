@@ -297,7 +297,7 @@ class FanControlGUI:
             cmd = [sys.executable, script, "daemon", "--background"]
             proc = subprocess.Popen(cmd)
             time.sleep(0.5)
-            if proc.poll() is not None:
+            if proc.poll() is not None and proc.poll() != 0:
                 self.status_var.set(f"Errore avvio profili (exit code {proc.poll()})")
             else:
                 time.sleep(0.5)

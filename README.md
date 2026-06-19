@@ -169,6 +169,10 @@ Se si aggiorna il programma da una versione precedente, il vecchio formato `curv
 
 ## Changelog
 
+### Fix: exit code 0 trattato come errore in GUI
+
+- **gui.py**: `_toggle_profile_daemon()` — condizione `proc.poll() is not None` → `proc.poll() is not None and proc.poll() != 0`; il demone double-fork (`daemon.py`) esce con code 0 (successo) mentre il daemon vero continua in background, la GUI ora distingue exit code 0 da errori reali
+
 ### X5690 Single-CPU Profile Alignment
 
 - **config.py**: renaming profili `media` → `quiet_daily`, `alta` → `heavy_work`, `massima` → `render_mode`; aggiunto 4° profilo `silent` (ultra-silenzioso idle/light desktop)
