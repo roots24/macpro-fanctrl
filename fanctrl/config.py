@@ -35,78 +35,87 @@ def validate_profile(profile):
 
 
 DEFAULT_PROFILES = {
-    "media": {
+    "silent": {
         "interval": 5,
         "fans": {
+            "BOOST": {
+                "sensors": ["TCAC", "TCAD"],
+                "curve": [[0, 800], [35, 1200], [45, 1600], [55, 2500], [65, 4500]]
+            },
             "PCI": {
                 "sensors": ["TMA1", "TMA2", "TMTG"],
-                "curve": [[0, 800], [50, 800], [60, 1200], [70, 2000], [80, 3500], [90, 4500]]
-            },
-            "PS": {
-                "sensors": ["Tp0C", "Tp1C", "TpPS"],
-                "curve": [[0, 600], [50, 600], [60, 1000], [70, 1800], [80, 2800]]
+                "curve": [[0, 800], [35, 1200], [50, 1800], [65, 3000], [75, 4500]]
             },
             "EXHAUST": {
-                "sensors": ["TCAG", "TCBG", "TN0D"],
-                "curve": [[0, 800], [50, 800], [60, 1200], [70, 1800], [80, 2800]]
+                "sensors": ["Tp0C", "Tp1C", "TpPS"],
+                "curve": [[0, 800], [30, 1000], [40, 1400], [50, 2200], [60, 4500]]
             },
             "INTAKE": {
-                "sensors": ["TA0P", "TH1P", "TH2P"],
-                "curve": [[0, 800], [50, 800], [60, 1200], [70, 1800], [80, 2800]]
-            },
-            "BOOSTA": {
-                "sensors": ["TCAC", "TCAD"],
-                "curve": [[0, 800], [60, 800], [70, 1500], [80, 2500], [90, 4000]]
+                "sensors": ["TCAG", "TCBG", "TN0D"],
+                "curve": [[0, 800], [30, 1000], [40, 1400], [50, 2200], [60, 4500]]
             }
         }
     },
-    "alta": {
+    "quiet_daily": {
+        "interval": 5,
+        "fans": {
+            "BOOST": {
+                "sensors": ["TCAC", "TCAD"],
+                "curve": [[0, 800], [35, 1200], [45, 2000], [55, 3000], [65, 4500]]
+            },
+            "PCI": {
+                "sensors": ["TMA1", "TMA2", "TMTG"],
+                "curve": [[0, 800], [35, 1200], [50, 2000], [65, 3500], [75, 4500]]
+            },
+            "EXHAUST": {
+                "sensors": ["Tp0C", "Tp1C", "TpPS"],
+                "curve": [[0, 1000], [30, 1000], [40, 1500], [50, 2500], [60, 4500]]
+            },
+            "INTAKE": {
+                "sensors": ["TCAG", "TCBG", "TN0D"],
+                "curve": [[0, 1000], [30, 1000], [40, 1500], [50, 2500], [60, 4500]]
+            }
+        }
+    },
+    "heavy_work": {
         "interval": 3,
         "fans": {
+            "BOOST": {
+                "sensors": ["TCAC", "TCAD"],
+                "curve": [[0, 2000], [35, 2000], [45, 2800], [55, 3500], [65, 4500]]
+            },
             "PCI": {
                 "sensors": ["TMA1", "TMA2", "TMTG"],
-                "curve": [[0, 1200], [40, 1200], [50, 2000], [60, 3000], [70, 4000], [80, 4500]]
-            },
-            "PS": {
-                "sensors": ["Tp0C", "Tp1C", "TpPS"],
-                "curve": [[0, 1000], [40, 1000], [50, 1500], [60, 2200], [70, 2800]]
+                "curve": [[0, 1500], [35, 1500], [50, 2500], [65, 4000], [75, 4500]]
             },
             "EXHAUST": {
-                "sensors": ["TCAG", "TCBG", "TN0D"],
-                "curve": [[0, 1200], [40, 1200], [50, 1800], [60, 2400], [70, 2800]]
+                "sensors": ["Tp0C", "Tp1C", "TpPS"],
+                "curve": [[0, 2000], [30, 2000], [40, 2500], [50, 3500], [60, 4500]]
             },
             "INTAKE": {
-                "sensors": ["TA0P", "TH1P", "TH2P"],
-                "curve": [[0, 1200], [40, 1200], [50, 1800], [60, 2400], [70, 2800]]
-            },
-            "BOOSTA": {
-                "sensors": ["TCAC", "TCAD"],
-                "curve": [[0, 1200], [50, 1200], [60, 2200], [70, 3500], [80, 4000]]
+                "sensors": ["TCAG", "TCBG", "TN0D"],
+                "curve": [[0, 2000], [30, 2000], [40, 2500], [50, 3500], [60, 4500]]
             }
         }
     },
-    "massima": {
+    "render_mode": {
         "interval": 2,
         "fans": {
+            "BOOST": {
+                "sensors": ["TCAC", "TCAD"],
+                "curve": [[0, 3000], [35, 3000], [45, 3800], [55, 4200], [65, 4500]]
+            },
             "PCI": {
                 "sensors": ["TMA1", "TMA2", "TMTG"],
-                "curve": [[0, 2500], [30, 2500], [40, 3000], [50, 4000], [60, 4500]]
-            },
-            "PS": {
-                "sensors": ["Tp0C", "Tp1C", "TpPS"],
-                "curve": [[0, 1500], [30, 1500], [40, 2000], [50, 2800]]
+                "curve": [[0, 2500], [35, 2500], [50, 3500], [60, 4200], [75, 4500]]
             },
             "EXHAUST": {
-                "sensors": ["TCAG", "TCBG", "TN0D"],
-                "curve": [[0, 1500], [30, 1500], [40, 2000], [50, 2800]]
+                "sensors": ["Tp0C", "Tp1C", "TpPS"],
+                "curve": [[0, 3000], [30, 3000], [40, 3800], [50, 4200], [60, 4500]]
             },
             "INTAKE": {
-                "sensors": ["TA0P", "TH1P", "TH2P"],
-                "curve": [[0, 1500], [30, 1500], [40, 2000], [50, 2800]]
-            },
-            "BOOSTA": {
-                "sensors": ["TCAC", "TCAD"],
-                "curve": [[0, 2500], [30, 2500], [40, 3000], [50, 4000]]
+                "sensors": ["TCAG", "TCBG", "TN0D"],
+                "curve": [[0, 3000], [30, 3000], [40, 3800], [50, 4200], [60, 4500]]
             }
         }
     }
@@ -122,7 +131,7 @@ def load_config():
     if not os.path.exists(CONFIG_PATH):
         os.makedirs(CONFIG_DIR, exist_ok=True)
         config = {
-            "active_profile": "media",
+            "active_profile": "quiet_daily",
             "profiles": DEFAULT_PROFILES
         }
         save_config(config)
@@ -140,12 +149,13 @@ def load_config():
         old_fans = config.get("fans", {})
         old_interval = config.get("interval", 5)
         profiles = {
-            "media": {"interval": old_interval, "fans": old_fans},
-            "alta": DEFAULT_PROFILES["alta"],
-            "massima": DEFAULT_PROFILES["massima"],
+            "quiet_daily": {"interval": old_interval, "fans": old_fans},
+            "heavy_work": DEFAULT_PROFILES["heavy_work"],
+            "render_mode": DEFAULT_PROFILES["render_mode"],
+            "silent": DEFAULT_PROFILES["silent"],
         }
         config = {
-            "active_profile": "media",
+            "active_profile": "quiet_daily",
             "profiles": profiles,
         }
         save_config(config)
@@ -156,7 +166,7 @@ def load_config():
         valid, msg = validate_profile(profile)
         if not valid:
             print(f"AVVISO: profilo '{name}' invalido ({msg}) — uso default")
-            config["profiles"][name] = DEFAULT_PROFILES.get(name, DEFAULT_PROFILES["media"])
+            config["profiles"][name] = DEFAULT_PROFILES.get(name, DEFAULT_PROFILES["quiet_daily"])
 
     return config
 
@@ -168,16 +178,16 @@ def list_profiles():
 
 def get_active_profile():
     config = load_config()
-    return config.get("active_profile", "media")
+    return config.get("active_profile", "quiet_daily")
 
 
 def get_active_profile_config():
     config = load_config()
-    name = config.get("active_profile", "media")
+    name = config.get("active_profile", "quiet_daily")
     profile = config["profiles"].get(name)
     if profile is None:
-        name = "media"
-        profile = config["profiles"].get(name, DEFAULT_PROFILES["media"])
+        name = "quiet_daily"
+        profile = config["profiles"].get(name, DEFAULT_PROFILES["quiet_daily"])
     return name, profile
 
 

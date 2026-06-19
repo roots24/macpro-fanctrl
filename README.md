@@ -10,7 +10,7 @@ I Mac Pro 5,1 in Linux tendono a mantenere le ventole a regimi elevati perché i
 - Leggere tutti i sensori di temperatura e le velocità delle ventole
 - Impostare manualmente la velocità delle ventole (singola o globale)
 - Eseguire un **demone automatico basato su curve PID-like** che regola i RPM in base ai sensori di temperatura configurati, usando interpolazione lineare a tratti
-- **Profili di curva** predefiniti (media, alta, massima) o personalizzati
+- **Profili di curva** predefiniti (silent, quiet_daily, heavy_work, render_mode) o personalizzati
 - Installare/disinstallare un **servizio systemd** per l'avvio persistente
 - Usare un'**interfaccia interattiva a terminale** o **interfaccia grafica (Tkinter)** con treeview dedicata sensori e colorizzazione temperatura (verde/arancione/rosso)
 
@@ -80,9 +80,10 @@ macpro-fanctrl/
 
 | Profilo | Intervallo | Descrizione |
 |---|---|---|
-| `media` | 5s | Bilanciato: silenzioso a basse temperature, aumento progressivo dei RPM |
-| `alta` | 3s | Soglie di temperatura più basse, RPM più alti a parità di carico |
-| `massima` | 2s | Raffreddamento massimo: ventole sempre a regime medio-alto, risposta immediata |
+| `silent` | 5s | Ultra-silenzioso per idle/light desktop, baseline RPM minimi |
+| `quiet_daily` | 5s | Quiet Daily — bilanciato per uso quotidiano, cap 4500 RPM su tutte le zone |
+| `heavy_work` | 3s | Heavy Work — soglie più aggressive per lavoro intensivo, cap 4500 RPM |
+| `render_mode` | 2s | Render Mode — raffreddamento massimo, ramp aggressiva CPU/GPU, cap 4500 RPM |
 
 ### Esempi
 
@@ -91,7 +92,7 @@ macpro-fanctrl/
 sudo ./macpro-fan.py show
 
 # Cambia profilo
-sudo ./macpro-fan.py profile switch alta
+sudo ./macpro-fan.py profile switch heavy_work
 
 # Mostra dettagli profilo attivo
 sudo ./macpro-fan.py profile show
@@ -115,7 +116,7 @@ sudo ./macpro-fan.py daemon --debug
 sudo ./macpro-fan.py gui
 
 # Esporta profilo per backup/condivisione
-./macpro-fan.py profile export media ~/media-profile.json
+./macpro-fan.py profile export quiet_daily ~/quiet_daily-profile.json
 
 # Importa profilo personalizzato
 ./macpro-fan.py profile import ~/custom-profile.json
@@ -138,20 +139,20 @@ Il file di configurazione si trova in `~/.config/macpro-fan/curve.json`, generat
 
 ```json
 {
-  "active_profile": "media",
+  "active_profile": "quiet_daily",
   "profiles": {
-    "media": {
+    "silent": {
       "interval": 5,
       "fans": {
-        "PCI":     { "sensors": ["TMA1","TMA2","TMTG"],  "curve": [[0,800],[50,800],[60,1200],[70,2000],[80,3500],[90,4500]] },
-        "PS":      { "sensors": ["Tp0C","Tp1C","TpPS"],   "curve": [[0,600],[50,600],[60,1000],[70,1800],[80,2800]] },
-        "EXHAUST": { "sensors": ["TCAG","TCBG","TN0D"],   "curve": [[0,800],[50,800],[60,1200],[70,1800],[80,2800]] },
-        "INTAKE":  { "sensors": ["TA0P","TH1P","TH2P"],   "curve": [[0,800],[50,800],[60,1200],[70,1800],[80,2800]] },
-        "BOOSTA":  { "sensors": ["TCAC","TCAD"],          "curve": [[0,800],[60,800],[70,1500],[80,2500],[90,4000]] }
+        "BOOST":   { "sensors": ["TCAC","TCAD"],         "curve": [[0,800],[35,1200],[45,1600],[55,2500],[65,4500]] },
+        "PCI":     { "sensors": ["TMA1","TMA2","TMTG"],  "curve": [[0,800],[35,1200],[50,1800],[65,3000],[75,4500]] },
+        "EXHAUST": { "sensors": ["Tp0C","Tp1C","TpPS"],  "curve": [[0,800],[30,1000],[40,1400],[50,2200],[60,4500]] },
+        "INTAKE":  { "sensors": ["TCAG","TCBG","TN0D"],  "curve": [[0,800],[30,1000],[40,1400],[50,2200],[60,4500]] }
       }
     },
-    "alta": { ... },
-    "massima": { ... }
+    "quiet_daily": { ... },
+    "heavy_work": { ... },
+    "render_mode": { ... }
   }
 }
 ```
@@ -164,9 +165,19 @@ Il demone supporta **hot-reload**: modifica `curve.json` mentre è in esecuzione
 
 ### Migrazione automatica
 
-Se si aggiorna il programma da una versione precedente, il vecchio formato `curve.json` (con `fans` a livello radice) viene automaticamente convertito al nuovo formato con profili, preservando le personalizzazioni dell'utente nel profilo `media`.
+Se si aggiorna il programma da una versione precedente, il vecchio formato `curve.json` (con `fans` a livello radice) viene automaticamente convertito al nuovo formato con profili, preservando le personalizzazioni dell'utente nel profilo `quiet_daily`.
 
 ## Changelog
+
+### X5690 Single-CPU Profile Alignment
+
+- **config.py**: renaming profili `media` → `quiet_daily`, `alta` → `heavy_work`, `massima` → `render_mode`; aggiunto 4° profilo `silent` (ultra-silenzioso idle/light desktop)
+- **config.py**: curve update per tutti i profili con cap 4500 RPM su tutte le zone (allineamento wiki mac-pro-5,1-x5690-profile)
+- **config.py**: sensor mapping single-CPU — BOOST zone usa solo ["TCAC", "TCAD"] (CPU #1), rimossi sensori CPU B; EXHAUST zone usa ["Tp0C", "Tp1C", "TpPS"]; INTAKE zone usa ["TCAG", "TCBG", "TN0D"]
+- **config.py**: fan zone labels aligned wiki — BOOSTA → BOOST, PS → EXHAUST, INTAKE sensors updated (CPU chamber ambient + MCP)
+- **config.py**: active profile default changed to `quiet_daily`
+- **README.md**: aggiornata tabella profili, esempio config JSON, changelog entry
+- **macpro-fan.py**: docstring e argparse epilog aggiornati con nuovi nomi profili
 
 ### Versione attuale — Miglioramenti applicati
 

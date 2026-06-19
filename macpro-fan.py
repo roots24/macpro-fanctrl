@@ -23,6 +23,8 @@ Comandi:
     profile export <nome> <file>  Esporta profilo in JSON
     profile import <file>       Importa profilo da JSON
     monitor                 Monitoraggio continuo (5s refresh)
+
+Profili predefiniti: silent, quiet_daily, heavy_work, render_mode (cap 4500 RPM, single-CPU sensor mapping).
 """
 
 import argparse
@@ -101,6 +103,8 @@ Comandi:
   profile export <nome> <file>  Esporta profilo in JSON
   profile import <file>       Importa profilo da JSON
   monitor                 Monitoraggio continuo (5s refresh)
+
+Profili predefiniti: silent, quiet_daily, heavy_work, render_mode (cap 4500 RPM, single-CPU sensor mapping).
 """
     )
     parser.add_argument("command", choices=[
