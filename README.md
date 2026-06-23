@@ -322,3 +322,6 @@ Se si aggiorna il programma da una versione precedente, il vecchio formato `curv
 ## Note
 
 Tutti i comandi che scrivono su sysfs richiedono **root**. I comandi `show`, `profile list`, `profile show` e `status` possono funzionare senza privilegi per la sola lettura.
+anteprima 
+![alt text](<Screenshot From 2026-06-23 20-32-47.png>)
+<video controls src="Screencast From 2026-06-23 20-34-31.mp4" title="Title"></video>
