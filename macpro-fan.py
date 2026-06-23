@@ -206,7 +206,7 @@ Profili predefiniti: silent, quiet_daily, heavy_work, render_mode (cap 4500 RPM,
 
     elif cmd == "gpu-info":
         all_temps = get_all_temps()
-        gpu_keys = ["TeGG", "TeRG", "Te1P", "Te2P"]
+        gpu_keys = ["TeGG", "TeGP", "TeRG", "TeRP", "Te1P", "Te1F", "Te1S", "Te2P", "Te2F", "Te2S", "Te3P", "Te3F", "Te3S", "Te4P", "Te4F", "Te4S", "Te5P", "Te5F", "Te5S"]
         print("GPU (Radeon VII) Sensori:")
         print(f"{'Sensore':<8} {'Temp °C':>7} {'Descrizione':<30}")
         print("-" * 45)

@@ -184,7 +184,7 @@ class FanControlGUI:
                     self.sensor_tree.insert(cat_id, tk.END, values=(key, f"{temp}°C", desc), tags=(child_tag,))
 
             # GPU idle/load detection
-            gpu_temps = [all_temps.get(k) for k in ["TeGG", "TeRG"] if all_temps.get(k) is not None]
+            gpu_temps = [all_temps.get(k) for k in ["TeGG", "TeGP", "TeRG", "TeRP"] if all_temps.get(k) is not None]
             if gpu_temps:
                 max_gpu_temp = max(gpu_temps)
                 if max_gpu_temp > 45:

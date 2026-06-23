@@ -217,9 +217,22 @@ Se si aggiorna il programma da una versione precedente, il vecchio formato `curv
 | Sensore | Descrizione | Soglia OK | Soglia WARN | Soglia CRIT |
 |---------|-------------|-----------|-------------|-------------|
 | `TeGG` | GPU Heatsink 1 | <60°C | 60-75°C | >75°C |
+| `TeGP` | GPU Proximity Global | <60°C | 60-75°C | >75°C |
 | `TeRG` | GPU Heatsink 2 | <60°C | 60-75°C | >75°C |
-| `Te1P` | GPU Proximity 1 | <60°C | 60-75°C | >75°C |
-| `Te2P` | GPU Proximity 2 | <60°C | 60-75°C | >75°C |
+| `TeRP` | GPU Proximity Global 2 | <60°C | 60-75°C | >75°C |
+| `Te1P/Te1F/Te1S` | GPU 1 Proximity/Flow/Status | <60°C | 60-75°C | >75°C |
+| `Te2P/Te2F/Te2S` | GPU 2 Proximity/Flow/Status | <60°C | 60-75°C | >75°C |
+| `Te3P/Te3F/Te3S` | GPU 3 Proximity/Flow/Status | <60°C | 60-75°C | >75°C |
+| `Te4P/Te4F/Te4S` | GPU 4 Proximity/Flow/Status | <60°C | 60-75°C | >75°C |
+| `Te5P/Te5F/Te5S` | GPU 5 Proximity/Flow/Status | <60°C | 60-75°C | >75°C |
+
+### Mappatura Sensori HDD (Vent Flow)
+| Sensore | Descrizione | Soglia OK | Soglia WARN | Soglia CRIT |
+|---------|-------------|-----------|-------------|-------------|
+| `TH1V` | HDD Bay 1 Vent Flow | <40°C | 40-60°C | >60°C |
+| `TH2V` | HDD Bay 2 Vent Flow | <40°C | 40-60°C | >60°C |
+| `TH3V` | HDD Bay 3 Vent Flow | <40°C | 40-60°C | >60°C |
+| `TH4V` | HDD Bay 4 Vent Flow | <40°C | 40-60°C | >60°C |
 
 ### Mappatura Sensori CPU (Xeon W5690)
 | Sensore | Descrizione | Soglia OK | Soglia WARN | Soglia CRIT |
@@ -236,7 +249,7 @@ Se si aggiorna il programma da una versione precedente, il vecchio formato `curv
 
 ### W5690 + Radeon VII — Aggiornamento Profili e Sensori GPU
 
-- **sensors.py**: aggiunta `GPU_SENSOR_KEYS` per mappatura esplicita sensori Radeon VII (TeGG, TeRG, Te1P, Te2P)
+- **sensors.py**: aggiunta `GPU_SENSOR_KEYS` per mappatura esplicita sensori Radeon VII (TeGG, TeGP, TeRG, TeRP, Te1P-S, Te2P-S, Te3P-S, Te4P-S, Te5P-S); aggiunti HDD vent flow sensors (TH1V-TH4V) a TEMP_GROUPS
 - **daemon.py**: aggiunta `gpu_safety_check()` con threshold 90°C per giunzione GPU; aggiunta `get_sensor_fallback()` per hot-swap sensor quando primari non disponibili
 - **daemon.py**: loop demone ora usa `get_sensor_fallback()` per ogni ventola; aggiungi controllo GPU safety separate
 - **gui.py**: colorizzazione GPU treeview aggiornata (green <60°C, orange 60-75°C, red >75°C); import `GPU_SENSOR_KEYS`

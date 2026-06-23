@@ -91,7 +91,7 @@ def gpu_safety_check(all_temps, max_gpu=90):
     Returns:
         bool: True se almeno un sensore GPU > max_gpu, False altrimenti.
     """
-    gpu_keys = ["TeGG", "TeRG"]
+    gpu_keys = ["TeGG", "TeGP", "TeRG", "TeRP"]
     for key in gpu_keys:
         temp = all_temps.get(key)
         if temp is not None and temp > max_gpu:
@@ -116,7 +116,7 @@ def get_sensor_fallback(all_temps, sensor_list):
     if primary:
         return primary
 
-    gpu_fallback = ["TeGG", "TeRG"]
+    gpu_fallback = ["TeGG", "TeGP", "TeRG", "TeRP"]
     alt = [all_temps.get(k) for k in gpu_fallback if all_temps.get(k) is not None]
     if alt:
         return alt
@@ -208,7 +208,7 @@ def cmd_daemon(debug=False):
 
             # GPU passthrough detection: se sensori GPU presenti e temp > 45°C → GPU sotto carico
             gpu_active = False
-            gpu_temps = [all_temps.get(k) for k in ["TeGG", "TeRG"] if all_temps.get(k) is not None]
+            gpu_temps = [all_temps.get(k) for k in ["TeGG", "TeGP", "TeRG", "TeRP"] if all_temps.get(k) is not None]
             if gpu_temps and max(gpu_temps) > 45:
                 gpu_active = True
 
