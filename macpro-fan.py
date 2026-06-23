@@ -23,6 +23,7 @@ Comandi:
     profile export <nome> <file>  Esporta profilo in JSON
     profile import <file>       Importa profilo da JSON
     monitor                 Monitoraggio continuo (5s refresh)
+    gpu-info                Mostra stato termico GPU (Radeon VII)
 
 Profili predefiniti: silent, quiet_daily, heavy_work, render_mode (cap 4500 RPM, single-CPU sensor mapping).
 """
@@ -30,7 +31,7 @@ Profili predefiniti: silent, quiet_daily, heavy_work, render_mode (cap 4500 RPM,
 import argparse
 import sys
 
-from fanctrl.sensors import get_all_temps, group_temps
+from fanctrl.sensors import get_all_temps, group_temps, TEMP_LABELS
 from fanctrl.fan import get_fan_info, set_fan, set_all_fans, auto, FanError
 from fanctrl.display import show_fans, show_temps, cmd_monitor
 from fanctrl.daemon import cmd_daemon, cmd_daemon_bg
@@ -57,6 +58,7 @@ def usage():
     print("  profile export <nome> <file>  Esporta profilo in JSON")
     print("  profile import <file>       Importa profilo da JSON")
     print("  monitor                 Monitoraggio continuo (5s refresh)")
+    print("  gpu-info                Mostra stato termico GPU (Radeon VII)")
     sys.exit(1)
 
 
@@ -102,7 +104,8 @@ Comandi:
   profile show            Mostra dettagli profilo attivo
   profile export <nome> <file>  Esporta profilo in JSON
   profile import <file>       Importa profilo da JSON
-  monitor                 Monitoraggio continuo (5s refresh)
+   monitor                 Monitoraggio continuo (5s refresh)
+   gpu-info                Mostra stato termico GPU (Radeon VII)
 
 Profili predefiniti: silent, quiet_daily, heavy_work, render_mode (cap 4500 RPM, single-CPU sensor mapping).
 """
@@ -110,7 +113,7 @@ Profili predefiniti: silent, quiet_daily, heavy_work, render_mode (cap 4500 RPM,
     parser.add_argument("command", choices=[
         "show", "set", "auto", "gui", "daemon",
         "install-service", "restart-service", "uninstall-service", "status",
-        "profile", "monitor"
+        "profile", "monitor", "gpu-info"
     ], help="Comando da eseguire")
 
     # Sub-args per daemon
@@ -200,6 +203,21 @@ Profili predefiniti: silent, quiet_daily, heavy_work, render_mode (cap 4500 RPM,
 
     elif cmd == "monitor":
         cmd_monitor()
+
+    elif cmd == "gpu-info":
+        all_temps = get_all_temps()
+        gpu_keys = ["TeGG", "TeRG", "Te1P", "Te2P"]
+        print("GPU (Radeon VII) Sensori:")
+        print(f"{'Sensore':<8} {'Temp °C':>7} {'Descrizione':<30}")
+        print("-" * 45)
+        for key in gpu_keys:
+            temp = all_temps.get(key)
+            desc = TEMP_LABELS.get(key, key)
+            if temp is not None:
+                status = "OK" if temp < 60 else ("WARN" if temp <= 75 else "CRIT")
+                print(f"{key:<8} {temp:>7}°C  {desc:<30} [{status}]")
+            else:
+                print(f"{key:<8} {'N/A':>7}  {desc:<30}")
 
 
 if __name__ == "__main__":

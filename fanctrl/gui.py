@@ -5,7 +5,7 @@ import sys
 import time
 
 from fanctrl import CONFIG_PATH
-from fanctrl.sensors import get_all_temps, group_temps, TEMP_LABELS, TEMP_GROUPS
+from fanctrl.sensors import get_all_temps, group_temps, TEMP_LABELS, TEMP_GROUPS, GPU_SENSOR_KEYS
 from fanctrl.fan import get_fan_info, get_fan_count, set_fan, set_all_fans, auto, FanError
 from fanctrl.config import load_config, list_profiles, switch_profile, get_active_profile
 from fanctrl.utils import require_root, is_daemon_running, get_script_path, read_pidfile, remove_pidfile
@@ -167,18 +167,37 @@ class FanControlGUI:
                 max_temp = groups.get(cat_name)
                 if max_temp is None:
                     continue
-                tag = "safe" if max_temp < 40 else ("warn" if max_temp <= 60 else "danger")
+                if cat_name == "GPU":
+                    tag = "safe" if max_temp < 60 else ("warn" if max_temp <= 75 else "danger")
+                else:
+                    tag = "safe" if max_temp < 40 else ("warn" if max_temp <= 60 else "danger")
                 cat_id = self.sensor_tree.insert("", tk.END, values=(cat_name, f"{max_temp}°C", ""), tags=(tag,), open=False)
                 for key in keys:
                     temp = all_temps.get(key)
                     if temp is None:
                         continue
                     desc = TEMP_LABELS.get(key, key)
-                    child_tag = "safe" if temp < 40 else ("warn" if temp <= 60 else "danger")
+                    if cat_name == "GPU" and key in GPU_SENSOR_KEYS:
+                        child_tag = "safe" if temp < 60 else ("warn" if temp <= 75 else "danger")
+                    else:
+                        child_tag = "safe" if temp < 40 else ("warn" if temp <= 60 else "danger")
                     self.sensor_tree.insert(cat_id, tk.END, values=(key, f"{temp}°C", desc), tags=(child_tag,))
 
+            # GPU idle/load detection
+            gpu_temps = [all_temps.get(k) for k in ["TeGG", "TeRG"] if all_temps.get(k) is not None]
+            if gpu_temps:
+                max_gpu_temp = max(gpu_temps)
+                if max_gpu_temp > 45:
+                    gpu_status = "CARICO"
+                elif max_gpu_temp > 30:
+                    gpu_status = "IDLE"
+                else:
+                    gpu_status = "OFF"
+            else:
+                gpu_status = "N/A"
+
             pid_str = "ON" if pid_on else "OFF"
-            self.status_var.set(f"Profilo: {profile_name}  |  PID: {pid_str}")
+            self.status_var.set(f"Profilo: {profile_name}  |  PID: {pid_str}  |  GPU: {gpu_status}")
 
             self.profile_btn.config(text="Stop Profili" if pid_on else "Start Profili")
 

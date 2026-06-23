@@ -58,13 +58,15 @@ def show_temps():
         return
 
     cpu_sensors = [s for s in sensors if s[0].startswith("CPU")]
+    gpu_sensors = [s for s in sensors if s[0].startswith(("GPU", "Te"))]
     mem_sensors = [s for s in sensors if s[0].startswith("Mem")]
-    pcie_sensors = [s for s in sensors if s[0].startswith(("PCIe", "GPU"))]
+    pcie_sensors = [s for s in sensors if s[0].startswith("PCIe")]
     hdd_sensors = [s for s in sensors if s[0].startswith("HDD")]
     nb_sensors = [s for s in sensors if s[0].startswith("MCP")]
+    pwr_sensors = [s for s in sensors if s[0].startswith("PWR")]
     other_sensors = [
         s for s in sensors
-        if s not in cpu_sensors + mem_sensors + pcie_sensors + hdd_sensors + nb_sensors
+        if s not in cpu_sensors + gpu_sensors + mem_sensors + pcie_sensors + hdd_sensors + nb_sensors + pwr_sensors
     ]
 
     def print_group(title, items):
@@ -79,10 +81,12 @@ def show_temps():
     print("  SENSORI TEMPERATURA")
     print(f"{'═' * 42}")
     print_group("CPU", cpu_sensors)
+    print_group("GPU (Radeon VII)", gpu_sensors)
     print_group("Memoria", mem_sensors)
+    print_group("PCIe", pcie_sensors)
     print_group("HDD", hdd_sensors)
-    print_group("PCIe / GPU", pcie_sensors)
     print_group("Northbridge", nb_sensors)
+    print_group("Alimentazione", pwr_sensors)
     print_group("Altro", other_sensors)
     print()
 

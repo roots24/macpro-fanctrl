@@ -81,6 +81,13 @@ TEMP_GROUPS = {
     "PCIe": ["TMA1", "TMA2", "TMA3", "TMA4", "TMB1", "TMB2", "TMB3", "TMB4", "TMTG", "TMHS", "TMLS"],
 }
 
+GPU_SENSOR_KEYS = {
+    "TeGG": "GPU Heatsink 1",
+    "TeRG": "GPU Heatsink 2",
+    "Te1P": "GPU Proximity 1",
+    "Te2P": "GPU Proximity 2",
+}
+
 # Cache sensori disponibili (popolata al primo accesso)
 _available_sensor_keys = None
 

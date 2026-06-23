@@ -85,6 +85,43 @@ macpro-fanctrl/
 | `heavy_work` | 3s | Heavy Work — soglie più aggressive per lavoro intensivo, cap 4500 RPM |
 | `render_mode` | 2s | Render Mode — raffreddamento massimo, ramp aggressiva CPU/GPU, cap 4500 RPM |
 
+### Curve Complete per Profilo
+
+#### silent (interval: 5s)
+| Ventola | Sensori | Curva [°C→RPM] |
+|---------|---------|----------------|
+| BOOST | TCAC, TCAD | [[0,800],[35,1200],[45,1600],[55,2500],[65,4500]] |
+| PCI | TMA1, TMA2, TMTG | [[0,800],[35,1200],[50,1800],[65,3000],[75,4500]] |
+| EXHAUST | Tp0C, Tp1C, TpPS | [[0,800],[30,1000],[40,1400],[50,2200],[60,4500]] |
+| INTAKE | TCAG, TCBG, TN0D | [[0,800],[30,1000],[40,1400],[50,2200],[60,4500]] |
+
+#### quiet_daily (interval: 5s) — DEFAULT
+| Ventola | Sensori | Curva [°C→RPM] |
+|---------|---------|----------------|
+| BOOST | TCAC, TCAD | [[0,800],[35,1200],[45,2000],[55,3000],[65,4500]] |
+| PCI | TMA1, TMA2, TMTG | [[0,800],[35,1200],[50,2000],[65,3500],[75,4500]] |
+| EXHAUST | Tp0C, Tp1C, TpPS | [[0,1000],[30,1000],[40,1500],[50,2500],[60,4500]] |
+| INTAKE | TCAG, TCBG, TN0D | [[0,1000],[30,1000],[40,1500],[50,2500],[60,4500]] |
+
+#### heavy_work (interval: 3s)
+| Ventola | Sensori | Curva [°C→RPM] |
+|---------|---------|----------------|
+| BOOST | TCAC, TCAD | [[0,2000],[35,2000],[45,2800],[55,3500],[65,4500]] |
+| PCI | TMA1, TMA2, TMTG | [[0,1500],[35,1500],[50,2500],[65,4000],[75,4500]] |
+| EXHAUST | Tp0C, Tp1C, TpPS | [[0,2000],[30,2000],[40,2500],[50,3500],[60,4500]] |
+| INTAKE | TCAG, TCBG, TN0D | [[0,2000],[30,2000],[40,2500],[50,3500],[60,4500]] |
+
+#### render_mode (interval: 2s)
+| Ventola | Sensori | Curva [°C→RPM] |
+|---------|---------|----------------|
+| BOOST | TCAC, TCAD | [[0,3000],[35,3000],[45,3800],[55,4200],[65,4500]] |
+| PCI | TMA1, TMA2, TMTG | [[0,2500],[35,2500],[50,3500],[60,4200],[75,4500]] |
+| EXHAUST | Tp0C, Tp1C, TpPS | [[0,3000],[30,3000],[40,3800],[50,4200],[60,4500]] |
+| INTAKE | TCAG, TCBG, TN0D | [[0,3000],[30,3000],[40,3800],[50,4200],[60,4500]] |
+
+### GPU Passthrough Profile
+Quando la Radeon VII è rilevata sotto carico (TeGG/TeRG > 45°C), il demone applica automaticamente un moltiplicatore +15% ai RPM minimi della zona PCI per garantire raffreddamento adeguato alla GPU.
+
 ### Esempi
 
 ```bash
@@ -167,7 +204,45 @@ Il demone supporta **hot-reload**: modifica `curve.json` mentre è in esecuzione
 
 Se si aggiorna il programma da una versione precedente, il vecchio formato `curve.json` (con `fans` a livello radice) viene automaticamente convertito al nuovo formato con profili, preservando le personalizzazioni dell'utente nel profilo `quiet_daily`.
 
+## Hardware Supportato
+
+### Mac Pro 5,1 + Xeon W5690 + Radeon VII (Configurazione Attuale)
+- **Modello**: Mac Pro 5,1 ("Cheesegrater")
+- **CPU**: Intel Xeon W5690 (Westmere-EP, 6 core / 12 thread @ 3.47 GHz turbo, TDP 130W)
+- **GPU**: AMD Radeon VII (Vega 5/64-bit HBM2, 294mm², TBP ~290W)
+- **Bus PCIe**: PCIe 2.0 x16 per GPU
+- **RAM**: DDR3 ECC registrata
+
+### Mappatura Sensori GPU (Radeon VII)
+| Sensore | Descrizione | Soglia OK | Soglia WARN | Soglia CRIT |
+|---------|-------------|-----------|-------------|-------------|
+| `TeGG` | GPU Heatsink 1 | <60°C | 60-75°C | >75°C |
+| `TeRG` | GPU Heatsink 2 | <60°C | 60-75°C | >75°C |
+| `Te1P` | GPU Proximity 1 | <60°C | 60-75°C | >75°C |
+| `Te2P` | GPU Proximity 2 | <60°C | 60-75°C | >75°C |
+
+### Mappatura Sensori CPU (Xeon W5690)
+| Sensore | Descrizione | Soglia OK | Soglia WARN | Soglia CRIT |
+|---------|-------------|-----------|-------------|-------------|
+| `TCAC` | CPU A Core | <40°C | 40-60°C | >60°C |
+| `TCAD` | CPU A Diode | <40°C | 40-60°C | >60°C |
+
+### Comandi GPU
+| Comando | Descrizione |
+|---|---|
+| `gpu-info` | Mostra stato termico GPU (Radeon VII) con colorizzazione OK/WARN/CRIT |
+
 ## Changelog
+
+### W5690 + Radeon VII — Aggiornamento Profili e Sensori GPU
+
+- **sensors.py**: aggiunta `GPU_SENSOR_KEYS` per mappatura esplicita sensori Radeon VII (TeGG, TeRG, Te1P, Te2P)
+- **daemon.py**: aggiunta `gpu_safety_check()` con threshold 90°C per giunzione GPU; aggiunta `get_sensor_fallback()` per hot-swap sensor quando primari non disponibili
+- **daemon.py**: loop demone ora usa `get_sensor_fallback()` per ogni ventola; aggiungi controllo GPU safety separate
+- **gui.py**: colorizzazione GPU treeview aggiornata (green <60°C, orange 60-75°C, red >75°C); import `GPU_SENSOR_KEYS`
+- **display.py**: raggruppamento terminale aggiornato — GPU separato da PCIe; aggiunta categoria "Alimentazione"
+- **macpro-fan.py**: nuovo comando `gpu-info` per stato termico GPU; import `TEMP_LABELS`; docstring/epilog aggiornati
+- **README.md**: sezione "Hardware Supportato" con W5690 + Radeon VII; mappatura sensor GPU/CPU; tabella comandi gpu-info
 
 ### Fix: exit code 0 trattato come errore in GUI
 

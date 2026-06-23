@@ -78,6 +78,57 @@ def safety_check(all_temps, max_safe=95):
     return False
 
 
+def gpu_safety_check(all_temps, max_gpu=90):
+    """
+    Verifica se i sensori GPU (TeGG/TeRG) superano la threshold di sicurezza GPU.
+
+    La Radeon VII ha una temperatura giunzione critica a ~90°C.
+
+    Args:
+        all_temps (dict): Mappa {chiave: temperatura_C} da get_all_temps().
+        max_gpu (int): Threshold massima GPU in °C (default 90).
+
+    Returns:
+        bool: True se almeno un sensore GPU > max_gpu, False altrimenti.
+    """
+    gpu_keys = ["TeGG", "TeRG"]
+    for key in gpu_keys:
+        temp = all_temps.get(key)
+        if temp is not None and temp > max_gpu:
+            return True
+    return False
+
+
+def get_sensor_fallback(all_temps, sensor_list):
+    """
+    Hot-swap sensor fallback: se alcuni sensori non disponibili,
+    usa quelli alternativi.
+
+    Args:
+        all_temps (dict): Mappa {chiave: temperatura_C} da get_all_temps().
+        sensor_list (list[str]): Lista di sensori primari per una ventola.
+
+    Returns:
+        list[int]: Liste delle temperature disponibili, con fallback su
+                   sensori alternativi se i primari non sono presenti.
+    """
+    primary = [all_temps.get(s) for s in sensor_list if all_temps.get(s) is not None]
+    if primary:
+        return primary
+
+    gpu_fallback = ["TeGG", "TeRG"]
+    alt = [all_temps.get(k) for k in gpu_fallback if all_temps.get(k) is not None]
+    if alt:
+        return alt
+
+    pci_fallback = ["TMA1", "TMA2", "TMTG"]
+    alt2 = [all_temps.get(k) for k in pci_fallback if all_temps.get(k) is not None]
+    if alt2:
+        return alt2
+
+    return []
+
+
 def _cleanup_daemon():
     set_auto()
     remove_pidfile()
@@ -150,16 +201,23 @@ def cmd_daemon(debug=False):
             if safety_active:
                 logger.warning(f"SAFETY: temperature critiche rilevate! Max temps: {', '.join(f'{k}={v}°C' for k, v in sorted(all_temps.items(), key=lambda x: x[1], reverse=True)[:5])}")
 
+            # GPU safety threshold: se sensore GPU > 90°C → ventola PCI a max RPM
+            gpu_safety_active = gpu_safety_check(all_temps, max_gpu=90)
+            if gpu_safety_active:
+                logger.warning(f"SAFETY GPU: temperatura giunzione Radeon VII critica! Max temps: {', '.join(f'{k}={v}°C' for k, v in sorted(all_temps.items(), key=lambda x: x[1], reverse=True)[:5])}")
+
+            # GPU passthrough detection: se sensori GPU presenti e temp > 45°C → GPU sotto carico
+            gpu_active = False
+            gpu_temps = [all_temps.get(k) for k in ["TeGG", "TeRG"] if all_temps.get(k) is not None]
+            if gpu_temps and max(gpu_temps) > 45:
+                gpu_active = True
+
             for label, fconf in profile["fans"].items():
                 fan_num = fan_map.get(label)
                 if fan_num is None:
                     continue
 
-                sensor_temps = [
-                    all_temps.get(s)
-                    for s in fconf["sensors"]
-                    if all_temps.get(s) is not None
-                ]
+                sensor_temps = get_sensor_fallback(all_temps, fconf["sensors"])
                 if safety_active:
                     # Usa ultimo punto della curva (max RPM)
                     target = interpolate(fconf["curve"], 9999)
@@ -192,6 +250,13 @@ def cmd_daemon(debug=False):
 
                 max_temp = max(sensor_temps)
                 target = interpolate(fconf["curve"], max_temp)
+
+                # GPU passthrough: quando GPU sotto carico → +15% RPM minimi PCI zone
+                if gpu_active and label == "PCI":
+                    min_rpm = fconf["curve"][0][1]
+                    adjusted_min = int(min_rpm * 1.15)
+                    current_target = interpolate(fconf["curve"], max_temp)
+                    target = max(target, adjusted_min)
 
                 key = f"fan{fan_num}"
                 if last_rpm.get(key) != target:
