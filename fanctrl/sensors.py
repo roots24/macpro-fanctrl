@@ -41,6 +41,10 @@ TEMP_LABELS = {
     "TH2P": "HDD Bay 2",
     "TH3P": "HDD Bay 3",
     "TH4P": "HDD Bay 4",
+    "TH1V": "HDD Bay 1 Voltage",
+    "TH2V": "HDD Bay 2 Voltage",
+    "TH3V": "HDD Bay 3 Voltage",
+    "TH4V": "HDD Bay 4 Voltage",
     "THPS": "HDD Proximity",
     "THTG": "HDD Thermal G",
     "TN0D": "MCP Diode",
@@ -117,6 +121,19 @@ GPU_SENSOR_KEYS = {
     "Te5F": "GPU 5 Flow",
     "Te5S": "GPU 5 Status",
 }
+
+def detect_cpu_count():
+    available = _scan_available_sensors()
+    has_cpu_b = "TCBC" in available or "TCBD" in available
+    return 2 if has_cpu_b else 1
+
+
+def get_cpu_sensors():
+    count = detect_cpu_count()
+    if count >= 2:
+        return ["TCAC", "TCAD", "TCBC", "TCBD"]
+    return ["TCAC", "TCAD"]
+
 
 # Cache sensori disponibili (popolata al primo accesso)
 _available_sensor_keys = None

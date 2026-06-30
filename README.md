@@ -7,12 +7,14 @@ Programma per il controllo manuale e automatico delle ventole su **Mac Pro 5,1**
 
 I Mac Pro 5,1 in Linux tendono a mantenere le ventole a regimi elevati perché il driver `applesmc` non implementa la gestione termica avanzata presente in macOS. Questo tool permette di:
 
-- Leggere tutti i sensori di temperatura e le velocità delle ventole
+- Leggere tutti i sensori di temperatura (SMC + hwmon) e le velocità delle ventole
 - Impostare manualmente la velocità delle ventole (singola o globale)
-- Eseguire un **demone automatico basato su curve PID-like** che regola i RPM in base ai sensori di temperatura configurati, usando interpolazione lineare a tratti
-- **Profili di curva** predefiniti (silent, quiet_daily, heavy_work, render_mode) o personalizzati
+- Eseguire un **demone automatico** che regola i RPM in base ai sensori di temperatura configurati
+- **Profili di curva** con interpolazione lineare a tratti o **controllo PID** (Proportional-Integral-Derivative)
+- **Isteresi configurabile** per prevenire oscillazioni delle ventole
+- **Slew rate limiting** per transizioni RPM graduali (senza sbalzi acustici)
 - Installare/disinstallare un **servizio systemd** per l'avvio persistente
-- Usare un'**interfaccia interattiva a terminale** o **interfaccia grafica (Tkinter)** con treeview dedicata sensori e colorizzazione temperatura (verde/arancione/rosso)
+- Usare un'**interfaccia interattiva a terminale** o **interfaccia grafica (Tkinter)** con colorizzazione temperatura (verde/arancione/rosso)
 
 ## Requisiti
 
@@ -38,7 +40,9 @@ macpro-fanctrl/
 ├── fanctrl/
 │   ├── __init__.py             # Costanti condivise
 │   ├── sysfs.py                # I/O sysfs (lettura/scrittura driver applesmc)
-│   ├── sensors.py              # Rilevamento sensori temperatura
+│   ├── sensors.py              # Rilevamento sensori temperatura SMC + detect CPU
+│   ├── non_smc.py              # Scanner sensori hwmon (coretemp, amdgpu, nvme)
+│   ├── pid.py                  # Controllore PID per ventole
 │   ├── fan.py                  # Operazioni ventole
 │   ├── config.py               # Caricamento curva JSON + gestione profili
 │   ├── display.py              # Output terminale + monitoraggio live
@@ -46,6 +50,11 @@ macpro-fanctrl/
 │   ├── daemon.py               # Demone curva automatica
 │   ├── gui.py                  # GUI Tkinter
 │   └── service.py              # Gestione servizio systemd
+├── tests/
+│   ├── test_config.py          # 15 test: validazione profili, safety, hysteresis
+│   ├── test_daemon.py          # 19 test: interpolate, safety_check, fallback
+│   ├── test_sensors.py         # 15 test: group_temps, TEMP_LABELS, TEMP_GROUPS
+│   └── test_pid.py             # 15 test: risposta P/I/D, clamping, anti-windup
 └── README.md
 ```
 
@@ -61,29 +70,36 @@ macpro-fanctrl/
 | `set <n> <rpm>` | Imposta manualmente la ventola N a un dato RPM |
 | `set all <rpm>` | Imposta tutte le ventole allo stesso RPM |
 | `auto` | Ripristina il controllo automatico hardware delle ventole |
-| `gui` | Interfaccia grafica (Tkinter): treeview ventole + treeview sensori con colorizzazione temperatura, profili integrati |
+| `gui` | Interfaccia grafica (Tkinter): treeview ventole + sensori, profili integrati |
 | `daemon` | Avvia il demone con la curva automatica (primo piano) |
 | `daemon --background` | Avvia il demone in background (double-fork) |
 | `daemon --debug` | Avvia il demone con logging DEBUG level |
+| `gpu-info` | Mostra stato termico GPU completo (SMC + hwmon amdgpu) |
+| `cpu-info` | Mostra CPU rilevate, sensori SMC e core temp hwmon |
 | `profile list` | Elenca i profili disponibili |
 | `profile switch <nome>` | Cambia il profilo attivo |
 | `profile show` | Mostra i dettagli del profilo attivo (sensori e curve) |
 | `profile export <nome> <file>` | Esporta un profilo in file JSON |
 | `profile import <file>` | Importa un profilo da file JSON |
+| `profile dual-auto [--apply]` | Rileva CPU count e suggerisce/applica profilo dual/single appropriato |
 | `monitor` | Monitoraggio continuo con refresh ogni 5 secondi |
 | `install-service` | Installa il servizio systemd per l'avvio automatico |
 | `restart-service` | Riavvia il servizio systemd |
 | `uninstall-service` | Rimuove il servizio systemd |
 | `status` | Mostra stato del servizio e ultimi log |
 
-### Profili predefiniti
+### Profili predefiniti (8 totali)
 
-| Profilo | Intervallo | Descrizione |
-|---|---|---|
-| `silent` | 5s | Ultra-silenzioso per idle/light desktop, baseline RPM minimi |
-| `quiet_daily` | 5s | Quiet Daily — bilanciato per uso quotidiano, cap 4500 RPM su tutte le zone |
-| `heavy_work` | 3s | Heavy Work — soglie più aggressive per lavoro intensivo, cap 4500 RPM |
-| `render_mode` | 2s | Render Mode — raffreddamento massimo, ramp aggressiva CPU/GPU, cap 4500 RPM |
+| Profilo | Intervallo | Modalità | Descrizione |
+|---|---|---|---|
+| `silent` | 5s | curve | Ultra-silenzioso per idle, EXHAUST/INTAKE a 2800 RPM max |
+| `quiet_daily` | 5s | curve | Bilanciato per uso quotidiano (DEFAULT) |
+| `heavy_work` | 3s | curve | Soglie più aggressive per lavoro intensivo |
+| `render_mode` | 2s | curve | Raffreddamento massimo, ramp aggressiva |
+| `quiet_daily_dual` | 5s | curve | Dual CPU — baseline +400 RPM, BOOST max 5200 RPM |
+| `heavy_work_dual` | 3s | curve | Dual CPU — soglie alte per carichi su due Xeon |
+| `render_mode_dual` | 2s | curve | Dual CPU — raffreddamento massimo, EXHAUST 4500 RPM |
+| `pid_quiet` | 3s | **pid** | Controllo PID: target 55°C, Kp=20, Ki=0.8, Kd=3.0 |
 
 ### Curve Complete per Profilo
 
@@ -91,36 +107,72 @@ macpro-fanctrl/
 | Ventola | Sensori | Curva [°C→RPM] |
 |---------|---------|----------------|
 | BOOST | TCAC, TCAD | [[0,800],[35,1200],[45,1600],[55,2500],[65,4500]] |
-| PCI | TMA1, TMA2, TMTG | [[0,800],[35,1200],[50,1800],[65,3000],[75,4500]] |
-| EXHAUST | Tp0C, Tp1C, TpPS | [[0,800],[30,1000],[40,1400],[50,2200],[60,4500]] |
-| INTAKE | TCAG, TCBG, TN0D | [[0,800],[30,1000],[40,1400],[50,2200],[60,4500]] |
+| PCI | TMA1, TMA2, TMTG, edge, junction, mem | [[0,800],[35,1200],[50,1800],[65,3000],[75,4500]] |
+| EXHAUST | Tp0C, Tp1C, TpPS | [[0,800],[30,1000],[40,1400],[50,2200],[60,**2800**]] |
+| INTAKE | TCAG, TCBG, TN0D | [[0,800],[30,1000],[40,1400],[50,2200],[60,**2800**]] |
 
 #### quiet_daily (interval: 5s) — DEFAULT
 | Ventola | Sensori | Curva [°C→RPM] |
 |---------|---------|----------------|
 | BOOST | TCAC, TCAD | [[0,800],[35,1200],[45,2000],[55,3000],[65,4500]] |
-| PCI | TMA1, TMA2, TMTG | [[0,800],[35,1200],[50,2000],[65,3500],[75,4500]] |
-| EXHAUST | Tp0C, Tp1C, TpPS | [[0,1000],[30,1000],[40,1500],[50,2500],[60,4500]] |
-| INTAKE | TCAG, TCBG, TN0D | [[0,1000],[30,1000],[40,1500],[50,2500],[60,4500]] |
+| PCI | TMA1, TMA2, TMTG, edge, junction, mem | [[0,800],[35,1200],[50,2000],[65,3500],[75,4500]] |
+| EXHAUST | Tp0C, Tp1C, TpPS | [[0,1000],[30,1000],[40,1500],[50,2500],[60,**2800**]] |
+| INTAKE | TCAG, TCBG, TN0D | [[0,1000],[30,1000],[40,1500],[50,2500],[60,**2800**]] |
 
 #### heavy_work (interval: 3s)
 | Ventola | Sensori | Curva [°C→RPM] |
 |---------|---------|----------------|
 | BOOST | TCAC, TCAD | [[0,2000],[35,2000],[45,2800],[55,3500],[65,4500]] |
-| PCI | TMA1, TMA2, TMTG | [[0,1500],[35,1500],[50,2500],[65,4000],[75,4500]] |
-| EXHAUST | Tp0C, Tp1C, TpPS | [[0,2000],[30,2000],[40,2500],[50,3500],[60,4500]] |
-| INTAKE | TCAG, TCBG, TN0D | [[0,2000],[30,2000],[40,2500],[50,3500],[60,4500]] |
+| PCI | TMA1, TMA2, TMTG, edge, junction, mem | [[0,1500],[35,1500],[50,2500],[65,4000],[75,4500]] |
+| EXHAUST | Tp0C, Tp1C, TpPS | [[0,2000],[30,2000],[40,2500],[50,3500],[60,**2800**]] |
+| INTAKE | TCAG, TCBG, TN0D | [[0,2000],[30,2000],[40,2500],[50,3500],[60,**2800**]] |
 
 #### render_mode (interval: 2s)
 | Ventola | Sensori | Curva [°C→RPM] |
 |---------|---------|----------------|
 | BOOST | TCAC, TCAD | [[0,3000],[35,3000],[45,3800],[55,4200],[65,4500]] |
-| PCI | TMA1, TMA2, TMTG | [[0,2500],[35,2500],[50,3500],[60,4200],[75,4500]] |
-| EXHAUST | Tp0C, Tp1C, TpPS | [[0,3000],[30,3000],[40,3800],[50,4200],[60,4500]] |
-| INTAKE | TCAG, TCBG, TN0D | [[0,3000],[30,3000],[40,3800],[50,4200],[60,4500]] |
+| PCI | TMA1, TMA2, TMTG, edge, junction, mem | [[0,2500],[35,2500],[50,3500],[60,4200],[75,4500]] |
+| EXHAUST | Tp0C, Tp1C, TpPS | [[0,3000],[30,3000],[40,3800],[50,4200],[60,**2800**]] |
+| INTAKE | TCAG, TCBG, TN0D | [[0,3000],[30,3000],[40,3800],[50,4200],[60,**2800**]] |
+
+#### quiet_daily_dual (interval: 5s) — Dual CPU
+| Ventola | Sensori | Curva [°C→RPM] |
+|---------|---------|----------------|
+| BOOST | TCAC, TCAD, **TCBC, TCBD** | [[0,1200],[35,1500],[45,2500],[55,3500],[65,**5200**]] |
+| PCI | TMA1, TMA2, TMTG, edge, junction, mem | [[0,1000],[35,1400],[50,2200],[65,3500],[75,4500]] |
+| EXHAUST | Tp0C, Tp1C, TpPS | [[0,1200],[30,1400],[40,1800],[50,2500],[60,2800]] |
+| INTAKE | TCAG, TCBG, TN0D | [[0,1200],[30,1400],[40,1800],[50,2500],[60,2800]] |
+
+#### heavy_work_dual (interval: 3s) — Dual CPU
+| Ventola | Sensori | Curva [°C→RPM] |
+|---------|---------|----------------|
+| BOOST | TCAC, TCAD, TCBC, TCBD | [[0,2200],[35,2500],[45,3200],[55,4000],[65,**5200**]] |
+| PCI | TMA1, TMA2, TMTG, edge, junction, mem | [[0,1800],[35,2000],[50,2800],[65,4200],[75,4500]] |
+| EXHAUST | Tp0C, Tp1C, TpPS | [[0,2200],[30,2400],[40,2800],[50,3500],[60,4500]] |
+| INTAKE | TCAG, TCBG, TN0D | [[0,2200],[30,2400],[40,2800],[50,3500],[60,4500]] |
+
+#### render_mode_dual (interval: 2s) — Dual CPU
+| Ventola | Sensori | Curva [°C→RPM] |
+|---------|---------|----------------|
+| BOOST | TCAC, TCAD, TCBC, TCBD | [[0,3200],[35,3500],[45,4200],[55,4800],[65,**5200**]] |
+| PCI | TMA1, TMA2, TMTG, edge, junction, mem | [[0,2800],[35,3000],[50,3800],[60,4500],[75,4500]] |
+| EXHAUST | Tp0C, Tp1C, TpPS | [[0,3200],[30,3400],[40,4000],[50,4500],[60,4500]] |
+| INTAKE | TCAG, TCBG, TN0D | [[0,3200],[30,3400],[40,4000],[50,4500],[60,4500]] |
 
 ### GPU Passthrough Profile
 Quando la Radeon VII è rilevata sotto carico (TeGG/TeRG > 45°C), il demone applica automaticamente un moltiplicatore +15% ai RPM minimi della zona PCI per garantire raffreddamento adeguato alla GPU.
+
+### PID Control Mode
+Il profilo `pid_quiet` usa un controllore PID invece dell'interpolazione lineare:
+
+| Ventola | Target | Kp | Ki | Kd | Range RPM |
+|---------|--------|----|----|----|-----------|
+| BOOST | 55°C | 20 | 0.8 | 3.0 | 800–4500 |
+| PCI | 55°C | 18 | 0.6 | 2.5 | 800–4500 |
+| EXHAUST | 50°C | 15 | 0.5 | 2.0 | 800–2800 |
+| INTAKE | 50°C | 15 | 0.5 | 2.0 | 800–2800 |
+
+Il PID risponde in modo continuo alla temperatura corrente e alla sua derivata, eliminando gli scalini tipici delle curve a tratti. L'isteresi è disabilitata automaticamente in modalità PID.
 
 ### Esempi
 
@@ -134,8 +186,17 @@ sudo ./macpro-fan.py profile switch heavy_work
 # Mostra dettagli profilo attivo
 sudo ./macpro-fan.py profile show
 
+# Rileva CPU e suggerisce profilo
+sudo ./macpro-fan.py profile dual-auto --apply
+
 # Elenca profili disponibili
 sudo ./macpro-fan.py profile list
+
+# Mostra info CPU (singola/duale + coretemp hwmon)
+sudo ./macpro-fan.py cpu-info
+
+# Mostra info GPU completa (SMC + hwmon)
+sudo ./macpro-fan.py gpu-info
 
 # Monitoraggio live (refresh ogni 5s)
 sudo ./macpro-fan.py monitor
@@ -148,6 +209,10 @@ sudo ./macpro-fan.py auto
 
 # Avvia il demone in primo piano con debug logging
 sudo ./macpro-fan.py daemon --debug
+
+# Avvia il demone con controllo PID
+sudo ./macpro-fan.py profile switch pid_quiet
+sudo ./macpro-fan.py daemon
 
 # Avvia l'interfaccia grafica
 sudo ./macpro-fan.py gui
@@ -170,7 +235,7 @@ journalctl -u macpro-fan
 
 ## Configurazione
 
-Il file di configurazione si trova in `~/.config/macpro-fan/curve.json`, generato automaticamente al primo avvio con tutti e 3 i profili predefiniti.
+Il file di configurazione si trova in `~/.config/macpro-fan/curve.json`, generato automaticamente al primo avvio con tutti i profili predefiniti.
 
 ### Struttura del file
 
@@ -178,150 +243,108 @@ Il file di configurazione si trova in `~/.config/macpro-fan/curve.json`, generat
 {
   "active_profile": "quiet_daily",
   "profiles": {
-    "silent": {
+    "quiet_daily": {
       "interval": 5,
+      "control_mode": "curve",
+      "safety": {
+        "system_max_temp": 95,
+        "system_fallback_rpm": "max",
+        "gpu_sensors": ["TeGG", "TeRG"],
+        "gpu_max_temp": 90
+      },
+      "hysteresis": { "enabled": true, "deadband": 3 },
+      "slew_rate": { "max_rpm_change_per_cycle": 500 },
       "fans": {
-        "BOOST":   { "sensors": ["TCAC","TCAD"],         "curve": [[0,800],[35,1200],[45,1600],[55,2500],[65,4500]] },
-        "PCI":     { "sensors": ["TMA1","TMA2","TMTG"],  "curve": [[0,800],[35,1200],[50,1800],[65,3000],[75,4500]] },
-        "EXHAUST": { "sensors": ["Tp0C","Tp1C","TpPS"],  "curve": [[0,800],[30,1000],[40,1400],[50,2200],[60,4500]] },
-        "INTAKE":  { "sensors": ["TCAG","TCBG","TN0D"],  "curve": [[0,800],[30,1000],[40,1400],[50,2200],[60,4500]] }
+        "BOOST": { "sensors": ["TCAC","TCAD"], "curve": [[0,800],[35,1200],[45,2000],[55,3000],[65,4500]] },
+        "PCI": { "sensors": ["TMA1","TMA2","TMTG","edge","junction","mem"], "curve": [[0,800],[35,1200],[50,2000],[65,3500],[75,4500]] },
+        "EXHAUST": { "sensors": ["Tp0C","Tp1C","TpPS"], "curve": [[0,1000],[30,1000],[40,1500],[50,2500],[60,2800]] },
+        "INTAKE": { "sensors": ["TCAG","TCBG","TN0D"], "curve": [[0,1000],[30,1000],[40,1500],[50,2500],[60,2800]] }
       }
-    },
-    "quiet_daily": { ... },
-    "heavy_work": { ... },
-    "render_mode": { ... }
+    }
   }
 }
 ```
 
 - `active_profile`: profilo correntemente attivo
-- `profiles`: dizionario di profili, ognuno con `interval` (secondi) e `fans` (mappa ventola → sensori + curva)
-- Ogni curva è una lista di coppie `[temperatura_C, RPM]` con interpolazione lineare
+- `control_mode`: `"curve"` (interpolazione lineare) o `"pid"` (controllo PID)
+- `safety`: soglie di sicurezza (system_max_temp, gpu_max_temp, gpu_sensors, system_fallback_rpm)
+- `hysteresis`: banda morta in °C per evitare oscillazioni ventola
+- `slew_rate`: variazione RPM massima per ciclo per transizioni graduali
+- `profiles`: dizionario di profili, ognuno con `interval` (secondi) e `fans`
 
-Il demone supporta **hot-reload**: modifica `curve.json` mentre è in esecuzione e la curva verrà ricaricata automaticamente al ciclo successivo, inclusi cambio di profilo e intervallo.
+Il demone supporta **hot-reload**: modifica `curve.json` mentre è in esecuzione e la curva verrà ricaricata automaticamente al ciclo successivo.
 
 ### Migrazione automatica
 
-Se si aggiorna il programma da una versione precedente, il vecchio formato `curve.json` (con `fans` a livello radice) viene automaticamente convertito al nuovo formato con profili, preservando le personalizzazioni dell'utente nel profilo `quiet_daily`.
+Se si aggiorna il programma da una versione precedente, il vecchio formato `curve.json` viene automaticamente convertito al nuovo formato con profili. I campi `safety`, `hysteresis`, `slew_rate` e `control_mode` vengono aggiunti automaticamente ai profili esistenti con valori predefiniti.
 
 ## Hardware Supportato
 
 ### Mac Pro 5,1 + Xeon W5690 + Radeon VII (Configurazione Attuale)
 - **Modello**: Mac Pro 5,1 ("Cheesegrater")
-- **CPU**: Intel Xeon W5690 (Westmere-EP, 6 core / 12 thread @ 3.47 GHz turbo, TDP 130W)
-- **GPU**: AMD Radeon VII (Vega 5/64-bit HBM2, 294mm², TBP ~290W)
+- **CPU**: Intel Xeon W5690 (Westmere-EP, 6 core / 12 thread @ 3.47 GHz, TDP 130W)
+- **GPU**: AMD Radeon VII (Vega 20, HBM2, TBP ~290W)
 - **Bus PCIe**: PCIe 2.0 x16 per GPU
 - **RAM**: DDR3 ECC registrata
 
+### Dual CPU Support
+Il progetto supporta configurazioni dual-CPU con profili dedicati:
+- Rilevamento automatico CPU count (`detect_cpu_count()`)
+- Profili con sensori CPU A + B (TCAC, TCAD + TCBC, TCBD)
+- Baseline RPM +400–500 per zona (260W TDP combinato)
+- BOOST max 5200 RPM (capienza hardware)
+
+### Sensori Non-SMC (hwmon)
+| Sorgente | Driver | Sensori | Integrazione |
+|----------|--------|---------|-------------|
+| CPU Cores | coretemp | Per-core temperature (PECI) | `cpu-info`, `gpu-info` |
+| GPU | amdgpu | Fan RPM, edge/junction/mem °C, power W, clock MHz | Curva PCI + `gpu-info` |
+| NVMe | nvme | Composite + individual sensor °C | `gpu-info` |
+
 ### Mappatura Sensori GPU (Radeon VII)
-| Sensore | Descrizione | Soglia OK | Soglia WARN | Soglia CRIT |
-|---------|-------------|-----------|-------------|-------------|
+| Sensore | Descrizione | OK | WARN | CRIT |
+|---------|-------------|----|------|------|
 | `TeGG` | GPU Heatsink 1 | <60°C | 60-75°C | >75°C |
 | `TeGP` | GPU Proximity Global | <60°C | 60-75°C | >75°C |
 | `TeRG` | GPU Heatsink 2 | <60°C | 60-75°C | >75°C |
 | `TeRP` | GPU Proximity Global 2 | <60°C | 60-75°C | >75°C |
-| `Te1P/Te1F/Te1S` | GPU 1 Proximity/Flow/Status | <60°C | 60-75°C | >75°C |
-| `Te2P/Te2F/Te2S` | GPU 2 Proximity/Flow/Status | <60°C | 60-75°C | >75°C |
-| `Te3P/Te3F/Te3S` | GPU 3 Proximity/Flow/Status | <60°C | 60-75°C | >75°C |
-| `Te4P/Te4F/Te4S` | GPU 4 Proximity/Flow/Status | <60°C | 60-75°C | >75°C |
-| `Te5P/Te5F/Te5S` | GPU 5 Proximity/Flow/Status | <60°C | 60-75°C | >75°C |
-
-### Mappatura Sensori HDD (Vent Flow)
-| Sensore | Descrizione | Soglia OK | Soglia WARN | Soglia CRIT |
-|---------|-------------|-----------|-------------|-------------|
-| `TH1V` | HDD Bay 1 Vent Flow | <40°C | 40-60°C | >60°C |
-| `TH2V` | HDD Bay 2 Vent Flow | <40°C | 40-60°C | >60°C |
-| `TH3V` | HDD Bay 3 Vent Flow | <40°C | 40-60°C | >60°C |
-| `TH4V` | HDD Bay 4 Vent Flow | <40°C | 40-60°C | >60°C |
 
 ### Mappatura Sensori CPU (Xeon W5690)
-| Sensore | Descrizione | Soglia OK | Soglia WARN | Soglia CRIT |
-|---------|-------------|-----------|-------------|-------------|
+| Sensore | Descrizione | OK | WARN | CRIT |
+|---------|-------------|----|------|------|
 | `TCAC` | CPU A Core | <40°C | 40-60°C | >60°C |
 | `TCAD` | CPU A Diode | <40°C | 40-60°C | >60°C |
-
-### Comandi GPU
-| Comando | Descrizione |
-|---|---|
-| `gpu-info` | Mostra stato termico GPU (Radeon VII) con colorizzazione OK/WARN/CRIT |
-
-## Changelog
-
-### W5690 + Radeon VII — Aggiornamento Profili e Sensori GPU
-
-- **sensors.py**: aggiunta `GPU_SENSOR_KEYS` per mappatura esplicita sensori Radeon VII (TeGG, TeGP, TeRG, TeRP, Te1P-S, Te2P-S, Te3P-S, Te4P-S, Te5P-S); aggiunti HDD vent flow sensors (TH1V-TH4V) a TEMP_GROUPS
-- **daemon.py**: aggiunta `gpu_safety_check()` con threshold 90°C per giunzione GPU; aggiunta `get_sensor_fallback()` per hot-swap sensor quando primari non disponibili
-- **daemon.py**: loop demone ora usa `get_sensor_fallback()` per ogni ventola; aggiungi controllo GPU safety separate
-- **gui.py**: colorizzazione GPU treeview aggiornata (green <60°C, orange 60-75°C, red >75°C); import `GPU_SENSOR_KEYS`
-- **display.py**: raggruppamento terminale aggiornato — GPU separato da PCIe; aggiunta categoria "Alimentazione"
-- **macpro-fan.py**: nuovo comando `gpu-info` per stato termico GPU; import `TEMP_LABELS`; docstring/epilog aggiornati
-- **README.md**: sezione "Hardware Supportato" con W5690 + Radeon VII; mappatura sensor GPU/CPU; tabella comandi gpu-info
-
-### Fix: exit code 0 trattato come errore in GUI
-
-- **gui.py**: `_toggle_profile_daemon()` — condizione `proc.poll() is not None` → `proc.poll() is not None and proc.poll() != 0`; il demone double-fork (`daemon.py`) esce con code 0 (successo) mentre il daemon vero continua in background, la GUI ora distingue exit code 0 da errori reali
-
-### X5690 Single-CPU Profile Alignment
-
-- **config.py**: renaming profili `media` → `quiet_daily`, `alta` → `heavy_work`, `massima` → `render_mode`; aggiunto 4° profilo `silent` (ultra-silenzioso idle/light desktop)
-- **config.py**: curve update per tutti i profili con cap 4500 RPM su tutte le zone (allineamento wiki mac-pro-5,1-x5690-profile)
-- **config.py**: sensor mapping single-CPU — BOOST zone usa solo ["TCAC", "TCAD"] (CPU #1), rimossi sensori CPU B; EXHAUST zone usa ["Tp0C", "Tp1C", "TpPS"]; INTAKE zone usa ["TCAG", "TCBG", "TN0D"]
-- **config.py**: fan zone labels aligned wiki — BOOSTA → BOOST, PS → EXHAUST, INTAKE sensors updated (CPU chamber ambient + MCP)
-- **config.py**: active profile default changed to `quiet_daily`
-- **README.md**: aggiornata tabella profili, esempio config JSON, changelog entry
-- **macpro-fan.py**: docstring e argparse epilog aggiornati con nuovi nomi profili
-
-### Versione attuale — Miglioramenti applicati
-
-- **gui.py**: pulsante "Curva ON/OFF" rinominato in "Start Profili/Stop Profili", metodo `_toggle_curve` → `_toggle_profile_daemon`, status messages aggiornati da "curva" a "profili"
-- **daemon.py**: aggiunta validazione curve (`interpolate()` fallback 800 RPM se curva invalida), punti ordinati automaticamente
-- **daemon.py**: safety threshold — se temp > 95°C tutte ventole a max RPM della curva, log warning con top 5 temperature
-- **daemon.py**: fallback RPM (min curve) quando sensors di una ventola unavailable
-- **daemon.py**: supporto `--debug` flag per logging DEBUG level
-- **utils.py**: RotatingFileHandler con rotazione log (5MB max, 3 backup files)
-- **utils.py**: supporto `debug=False/True` parameter in `setup_logging()`
-- **config.py**: `validate_profile()` — validazione curve ≥2 punti ordinati, RPM non negativi
-- **config.py**: backup config (`curve.json.bak`) prima di ogni lettura/migrazione
-- **config.py**: auto-recovery profilo invalido → sostituisce con default
-- **config.py**: nuovi comandi `export_profile()` e `import_profile()` per backup/condivisione profili
-- **fanctrl/fan.py**: debounce writes (0.15s intervallo minimo) per evitare writes ridondanti su sysfs
-- **fanctrl/fan.py**: validazione min > max sensore anomalo
-- **fanctrl/sensors.py**: cache sensori disponibili (`_scan_available_sensors()`) per performance
-- **fanctrl/sensors.py**: `get_sensor_debug_info()` — debug info sensors found vs mapped
-- **fanctrl/gui.py**: validazione RPM entry contro range ventola (min/max)
-- **fanctrl/gui.py**: validazione RPM positivo, min sistema per "set all"
-- **fanctrl/gui.py**: refresh loop resilient (`_refresh_loop()`) con try/except wrapper — non si ferma se GUI crash
-- **service.py**: service unit robusto — StandardOutput=journal, UMask=0027, RestartSec=3, Wants=applesmc.service
-- **service.py**: nuovo comando `restart-service`
-- **macpro-fan.py**: argparse CLI con help strutturato e validazione input
-- **macpro-fan.py**: nuovi comandi `profile export`, `profile import`, `restart-service`
-
-### Migliorie precedenti (README originale)
-
-- **daemon.py**: rimossa clamp ridondante dopo `interpolate()` (già clamps by design)
-- **gui.py**: cambiato a `subprocess.Popen` per lancio daemon background — evita `TimeoutExpired` che blocca la GUI
-- **gui.py**: treeview sensori con raggruppamento gerarchico per categoria (AMB + CPU/GPU/MCP/HDD/PWR/MEM/PCIe), collapsed default, user expand/collapse via click
-- **gui.py**: colorizzazione temperatura su righe sensori usando tags `style.map()` — verde `<40°C`, arancione `40-60°C`, rosso `>60°C`
-- **sensors.py**: aggiunti gruppi `MEM` e `PCIe` per 20+ sensori precedentemente in "Altro"
-- **display.py**: clear screen portabile usando `subprocess.run(["clear"])` invece di codici escape ANSI `\033[H\033[J`
+| `TCBC` | CPU B Core (dual) | <40°C | 40-60°C | >60°C |
+| `TCBD` | CPU B Diode (dual) | <40°C | 40-60°C | >60°C |
 
 ## Dettagli tecnici
 
 - Lingua: **Python 3** (solo libreria standard, Tkinter per la GUI)
-- Architettura: **multi-modulo** — package `fanctrl/` con 10 moduli separati
-- Interfaccia: **sysfs** del kernel Linux (`/sys/devices/platform/applesmc.768`)
+- Architettura: **multi-modulo** — package `fanctrl/` con 12 moduli separati
+- Interfaccia SMC: **sysfs** del kernel Linux (`/sys/devices/platform/applesmc.768`)
+- Interfaccia hwmon: **sysfs** (`/sys/class/hwmon/`) per coretemp, amdgpu, nvme
 - Demone in background: **double-fork** (`os.fork()` + `os.setsid()`) per il distacco completo dal terminale
 - Il controllo automatico hardware viene ripristinato all'uscita (SIGINT)
 - Rilevamento dinamico del numero di ventole
 - PID file in `/var/run/macpro-fan.pid` per il rilevamento dello stato del demone
-- Logging su file `/var/log/macpro-fan.log` in modalità background (con rotazione 5MB/3 backup)
+- Logging su file `/var/log/macpro-fan.log` in modalità background (rotazione 5MB/3 backup)
 - Hot-reload della configurazione (`curve.json`)
-- Gestione errori I/O sysfs con skip gracefully dei sensori/ventole non disponibili
-- Safety threshold 95°C → max RPM automatic
+- Gestione errori I/O sysfs con skip gracefully
+- Safety threshold configurabile (default 95°C) — max RPM automatic
+- Debounce 0.15s su scritture sysfs
+
+## Test
+
+```bash
+python3 -m unittest tests/*.py -v
+```
+
+64 test che coprono: validazione profili, interpolazione, safety check, fallback sensors, controllore PID, raggruppamento sensori.
 
 ## Note
 
-Tutti i comandi che scrivono su sysfs richiedono **root**. I comandi `show`, `profile list`, `profile show` e `status` possono funzionare senza privilegi per la sola lettura.
+Tutti i comandi che scrivono su sysfs richiedono **root**. I comandi `show`, `profile list`, `profile show`, `cpu-info` (parziale) e `status` possono funzionare senza privilegi per la sola lettura.
+
 anteprima 
 ![alt text](<Screenshot From 2026-06-23 20-32-47.png>)
 <video controls src="Screencast From 2026-06-23 20-34-31.mp4" title="Title"></video>

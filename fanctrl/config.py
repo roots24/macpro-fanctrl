@@ -4,118 +4,263 @@ import shutil
 
 from fanctrl import CONFIG_DIR, CONFIG_PATH
 
+DEFAULT_SAFETY = {
+    "system_max_temp": 95,
+    "system_fallback_rpm": "max",
+    "gpu_sensors": ["TeGG", "TeRG"],
+    "gpu_max_temp": 90,
+}
+
+DEFAULT_HYSTERESIS = {
+    "enabled": True,
+    "deadband": 3,
+}
+
+DEFAULT_SLEW_RATE = {
+    "max_rpm_change_per_cycle": 500,
+}
+
+DEFAULT_PID = {
+    "target_temp": 50,
+    "kp": 15,
+    "ki": 0.5,
+    "kd": 2.0,
+    "output_min": 800,
+    "output_max": 4500,
+}
+
+
 def validate_profile(profile):
-    """
-    Validata la struttura di un profilo: curve con ≥2 punti ordinati per temperatura.
-
-    Args:
-        profile (dict): Profilo da validare.
-
-    Returns:
-        tuple[bool, str]: (valid, message) — True se valido, False + messaggio errore.
-    """
     fans = profile.get("fans", {})
     if not fans:
         return False, "profilo senza ventole"
     for fan_label, fconf in fans.items():
         curve = fconf.get("curve", [])
         if len(curve) < 2:
-            return False, f"{fan_label}: curva deve avere ≥2 punti [temp, rpm]"
+            return False, f"{fan_label}: curva deve avere >=2 punti [temp, rpm]"
         prev_t = -1
         for pt in curve:
             if not isinstance(pt, (list, tuple)) or len(pt) != 2:
                 return False, f"{fan_label}: punto curva invalido {pt}"
             t, r = pt[0], pt[1]
             if t < prev_t:
-                return False, f"{fan_label}: punti curva non ordinati ({prev_t}°C → {t}°C)"
+                return False, f"{fan_label}: punti curva non ordinati ({prev_t}C -> {t}C)"
             if r < 0:
                 return False, f"{fan_label}: RPM negativo in punto {pt}"
             prev_t = t
+
+    safety = profile.get("safety", {})
+    if safety:
+        if not isinstance(safety, dict):
+            return False, "safety deve essere un dizionario"
+        if "system_max_temp" in safety and not isinstance(safety["system_max_temp"], (int, float)):
+            return False, "system_max_temp deve essere numerico"
+
     return True, "OK"
 
 
 DEFAULT_PROFILES = {
     "silent": {
         "interval": 5,
+        "control_mode": "curve",
+        "safety": dict(DEFAULT_SAFETY),
+        "hysteresis": dict(DEFAULT_HYSTERESIS),
+        "slew_rate": dict(DEFAULT_SLEW_RATE),
         "fans": {
             "BOOST": {
                 "sensors": ["TCAC", "TCAD"],
                 "curve": [[0, 800], [35, 1200], [45, 1600], [55, 2500], [65, 4500]]
             },
             "PCI": {
-                "sensors": ["TMA1", "TMA2", "TMTG"],
+                "sensors": ["TMA1", "TMA2", "TMTG", "edge", "junction", "mem"],
                 "curve": [[0, 800], [35, 1200], [50, 1800], [65, 3000], [75, 4500]]
             },
             "EXHAUST": {
                 "sensors": ["Tp0C", "Tp1C", "TpPS"],
-                "curve": [[0, 800], [30, 1000], [40, 1400], [50, 2200], [60, 4500]]
+                "curve": [[0, 800], [30, 1000], [40, 1400], [50, 2200], [60, 2800]]
             },
             "INTAKE": {
                 "sensors": ["TCAG", "TCBG", "TN0D"],
-                "curve": [[0, 800], [30, 1000], [40, 1400], [50, 2200], [60, 4500]]
+                "curve": [[0, 800], [30, 1000], [40, 1400], [50, 2200], [60, 2800]]
             }
         }
     },
     "quiet_daily": {
         "interval": 5,
+        "control_mode": "curve",
+        "safety": dict(DEFAULT_SAFETY),
+        "hysteresis": dict(DEFAULT_HYSTERESIS),
+        "slew_rate": dict(DEFAULT_SLEW_RATE),
         "fans": {
             "BOOST": {
                 "sensors": ["TCAC", "TCAD"],
                 "curve": [[0, 800], [35, 1200], [45, 2000], [55, 3000], [65, 4500]]
             },
             "PCI": {
-                "sensors": ["TMA1", "TMA2", "TMTG"],
+                "sensors": ["TMA1", "TMA2", "TMTG", "edge", "junction", "mem"],
                 "curve": [[0, 800], [35, 1200], [50, 2000], [65, 3500], [75, 4500]]
             },
             "EXHAUST": {
                 "sensors": ["Tp0C", "Tp1C", "TpPS"],
-                "curve": [[0, 1000], [30, 1000], [40, 1500], [50, 2500], [60, 4500]]
+                "curve": [[0, 1000], [30, 1000], [40, 1500], [50, 2500], [60, 2800]]
             },
             "INTAKE": {
                 "sensors": ["TCAG", "TCBG", "TN0D"],
-                "curve": [[0, 1000], [30, 1000], [40, 1500], [50, 2500], [60, 4500]]
+                "curve": [[0, 1000], [30, 1000], [40, 1500], [50, 2500], [60, 2800]]
             }
         }
     },
     "heavy_work": {
         "interval": 3,
+        "control_mode": "curve",
+        "safety": dict(DEFAULT_SAFETY),
+        "hysteresis": dict(DEFAULT_HYSTERESIS),
+        "slew_rate": dict(DEFAULT_SLEW_RATE),
         "fans": {
             "BOOST": {
                 "sensors": ["TCAC", "TCAD"],
                 "curve": [[0, 2000], [35, 2000], [45, 2800], [55, 3500], [65, 4500]]
             },
             "PCI": {
-                "sensors": ["TMA1", "TMA2", "TMTG"],
+                "sensors": ["TMA1", "TMA2", "TMTG", "edge", "junction", "mem"],
                 "curve": [[0, 1500], [35, 1500], [50, 2500], [65, 4000], [75, 4500]]
             },
             "EXHAUST": {
                 "sensors": ["Tp0C", "Tp1C", "TpPS"],
-                "curve": [[0, 2000], [30, 2000], [40, 2500], [50, 3500], [60, 4500]]
+                "curve": [[0, 2000], [30, 2000], [40, 2500], [50, 3500], [60, 2800]]
             },
             "INTAKE": {
                 "sensors": ["TCAG", "TCBG", "TN0D"],
-                "curve": [[0, 2000], [30, 2000], [40, 2500], [50, 3500], [60, 4500]]
+                "curve": [[0, 2000], [30, 2000], [40, 2500], [50, 3500], [60, 2800]]
+            }
+        }
+    },
+    "quiet_daily_dual": {
+        "interval": 5,
+        "control_mode": "curve",
+        "safety": dict(DEFAULT_SAFETY),
+        "hysteresis": dict(DEFAULT_HYSTERESIS),
+        "slew_rate": dict(DEFAULT_SLEW_RATE),
+        "fans": {
+            "BOOST": {
+                "sensors": ["TCAC", "TCAD", "TCBC", "TCBD"],
+                "curve": [[0, 1200], [35, 1500], [45, 2500], [55, 3500], [65, 5200]]
+            },
+            "PCI": {
+                "sensors": ["TMA1", "TMA2", "TMTG", "edge", "junction", "mem"],
+                "curve": [[0, 1000], [35, 1400], [50, 2200], [65, 3500], [75, 4500]]
+            },
+            "EXHAUST": {
+                "sensors": ["Tp0C", "Tp1C", "TpPS"],
+                "curve": [[0, 1200], [30, 1400], [40, 1800], [50, 2500], [60, 2800]]
+            },
+            "INTAKE": {
+                "sensors": ["TCAG", "TCBG", "TN0D"],
+                "curve": [[0, 1200], [30, 1400], [40, 1800], [50, 2500], [60, 2800]]
+            }
+        }
+    },
+    "heavy_work_dual": {
+        "interval": 3,
+        "control_mode": "curve",
+        "safety": dict(DEFAULT_SAFETY),
+        "hysteresis": dict(DEFAULT_HYSTERESIS),
+        "slew_rate": dict(DEFAULT_SLEW_RATE),
+        "fans": {
+            "BOOST": {
+                "sensors": ["TCAC", "TCAD", "TCBC", "TCBD"],
+                "curve": [[0, 2200], [35, 2500], [45, 3200], [55, 4000], [65, 5200]]
+            },
+            "PCI": {
+                "sensors": ["TMA1", "TMA2", "TMTG", "edge", "junction", "mem"],
+                "curve": [[0, 1800], [35, 2000], [50, 2800], [65, 4200], [75, 4500]]
+            },
+            "EXHAUST": {
+                "sensors": ["Tp0C", "Tp1C", "TpPS"],
+                "curve": [[0, 2200], [30, 2400], [40, 2800], [50, 3500], [60, 4500]]
+            },
+            "INTAKE": {
+                "sensors": ["TCAG", "TCBG", "TN0D"],
+                "curve": [[0, 2200], [30, 2400], [40, 2800], [50, 3500], [60, 4500]]
+            }
+        }
+    },
+    "render_mode_dual": {
+        "interval": 2,
+        "control_mode": "curve",
+        "safety": dict(DEFAULT_SAFETY),
+        "hysteresis": dict(DEFAULT_HYSTERESIS),
+        "slew_rate": dict(DEFAULT_SLEW_RATE),
+        "fans": {
+            "BOOST": {
+                "sensors": ["TCAC", "TCAD", "TCBC", "TCBD"],
+                "curve": [[0, 3200], [35, 3500], [45, 4200], [55, 4800], [65, 5200]]
+            },
+            "PCI": {
+                "sensors": ["TMA1", "TMA2", "TMTG", "edge", "junction", "mem"],
+                "curve": [[0, 2800], [35, 3000], [50, 3800], [60, 4500], [75, 4500]]
+            },
+            "EXHAUST": {
+                "sensors": ["Tp0C", "Tp1C", "TpPS"],
+                "curve": [[0, 3200], [30, 3400], [40, 4000], [50, 4500], [60, 4500]]
+            },
+            "INTAKE": {
+                "sensors": ["TCAG", "TCBG", "TN0D"],
+                "curve": [[0, 3200], [30, 3400], [40, 4000], [50, 4500], [60, 4500]]
+            }
+        }
+    },
+    "pid_quiet": {
+        "interval": 3,
+        "control_mode": "pid",
+        "safety": dict(DEFAULT_SAFETY),
+        "hysteresis": {"enabled": False, "deadband": 0},
+        "slew_rate": dict(DEFAULT_SLEW_RATE),
+        "fans": {
+            "BOOST": {
+                "sensors": ["TCAC", "TCAD"],
+                "curve": [[0, 800], [65, 4500]],
+                "pid": {"target_temp": 55, "kp": 20, "ki": 0.8, "kd": 3.0, "output_min": 800, "output_max": 4500}
+            },
+            "PCI": {
+                "sensors": ["TMA1", "TMA2", "TMTG", "edge", "junction", "mem"],
+                "curve": [[0, 800], [75, 4500]],
+                "pid": {"target_temp": 55, "kp": 18, "ki": 0.6, "kd": 2.5, "output_min": 800, "output_max": 4500}
+            },
+            "EXHAUST": {
+                "sensors": ["Tp0C", "Tp1C", "TpPS"],
+                "curve": [[0, 800], [60, 2800]],
+                "pid": {"target_temp": 50, "kp": 15, "ki": 0.5, "kd": 2.0, "output_min": 800, "output_max": 2800}
+            },
+            "INTAKE": {
+                "sensors": ["TCAG", "TCBG", "TN0D"],
+                "curve": [[0, 800], [60, 2800]],
+                "pid": {"target_temp": 50, "kp": 15, "ki": 0.5, "kd": 2.0, "output_min": 800, "output_max": 2800}
             }
         }
     },
     "render_mode": {
         "interval": 2,
+        "control_mode": "curve",
+        "safety": dict(DEFAULT_SAFETY),
+        "hysteresis": dict(DEFAULT_HYSTERESIS),
+        "slew_rate": dict(DEFAULT_SLEW_RATE),
         "fans": {
             "BOOST": {
                 "sensors": ["TCAC", "TCAD"],
                 "curve": [[0, 3000], [35, 3000], [45, 3800], [55, 4200], [65, 4500]]
             },
             "PCI": {
-                "sensors": ["TMA1", "TMA2", "TMTG"],
+                "sensors": ["TMA1", "TMA2", "TMTG", "edge", "junction", "mem"],
                 "curve": [[0, 2500], [35, 2500], [50, 3500], [60, 4200], [75, 4500]]
             },
             "EXHAUST": {
                 "sensors": ["Tp0C", "Tp1C", "TpPS"],
-                "curve": [[0, 3000], [30, 3000], [40, 3800], [50, 4200], [60, 4500]]
+                "curve": [[0, 3000], [30, 3000], [40, 3800], [50, 4200], [60, 2800]]
             },
             "INTAKE": {
                 "sensors": ["TCAG", "TCBG", "TN0D"],
-                "curve": [[0, 3000], [30, 3000], [40, 3800], [50, 4200], [60, 4500]]
+                "curve": [[0, 3000], [30, 3000], [40, 3800], [50, 4200], [60, 2800]]
             }
         }
     }
@@ -138,7 +283,6 @@ def load_config():
         print(f"Config creata: {CONFIG_PATH}")
         return config
 
-    # Backup prima lettura
     shutil.copy2(CONFIG_PATH, CONFIG_PATH + ".bak")
 
     with open(CONFIG_PATH) as f:
@@ -148,12 +292,13 @@ def load_config():
         print("Migrazione al formato profili in corso...")
         old_fans = config.get("fans", {})
         old_interval = config.get("interval", 5)
-        profiles = {
-            "quiet_daily": {"interval": old_interval, "fans": old_fans},
-            "heavy_work": DEFAULT_PROFILES["heavy_work"],
-            "render_mode": DEFAULT_PROFILES["render_mode"],
-            "silent": DEFAULT_PROFILES["silent"],
-        }
+        profiles = {}
+        for name in ["quiet_daily", "heavy_work", "render_mode", "silent"]:
+            base = dict(DEFAULT_PROFILES[name])
+            if name == "quiet_daily":
+                base["interval"] = old_interval
+                base["fans"] = old_fans if old_fans else base["fans"]
+            profiles[name] = base
         config = {
             "active_profile": "quiet_daily",
             "profiles": profiles,
@@ -161,12 +306,18 @@ def load_config():
         save_config(config)
         print("Migrazione completata.")
 
-    # Validazione profili
     for name, profile in config.get("profiles", {}).items():
+        profile.setdefault("safety", dict(DEFAULT_SAFETY))
+        profile.setdefault("hysteresis", dict(DEFAULT_HYSTERESIS))
+        profile.setdefault("slew_rate", dict(DEFAULT_SLEW_RATE))
+        profile.setdefault("control_mode", "curve")
+        for fconf in profile.get("fans", {}).values():
+            fconf.setdefault("pid", dict(DEFAULT_PID))
+
         valid, msg = validate_profile(profile)
         if not valid:
             print(f"AVVISO: profilo '{name}' invalido ({msg}) — uso default")
-            config["profiles"][name] = DEFAULT_PROFILES.get(name, DEFAULT_PROFILES["quiet_daily"])
+            config["profiles"][name] = dict(DEFAULT_PROFILES.get(name, DEFAULT_PROFILES["quiet_daily"]))
 
     return config
 
@@ -210,16 +361,6 @@ def switch_profile(name):
 
 
 def export_profile(name, output_path):
-    """
-    Esporta un profilo in un file JSON separato.
-
-    Args:
-        name (str): Nome del profilo da esportare.
-        output_path (str): Path del file di output.
-
-    Returns:
-        bool: True se successo, False altrimenti.
-    """
     config = load_config()
     profiles = config.get("profiles", {})
     if name not in profiles:
@@ -233,15 +374,6 @@ def export_profile(name, output_path):
 
 
 def import_profile(input_path):
-    """
-    Importa un profilo da un file JSON e lo aggiunge alla config.
-
-    Args:
-        input_path (str): Path del file JSON da importare.
-
-    Returns:
-        bool: True se successo, False altrimenti.
-    """
     if not os.path.exists(input_path):
         print(f"ERRORE: File '{input_path}' non trovato.")
         return False

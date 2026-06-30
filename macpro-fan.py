@@ -38,6 +38,8 @@ from fanctrl.daemon import cmd_daemon, cmd_daemon_bg
 from fanctrl.service import cmd_install_service, cmd_uninstall_service, cmd_status, cmd_service_restart
 from fanctrl.utils import require_root
 from fanctrl.config import list_profiles, switch_profile, get_active_profile, get_active_profile_config, export_profile, import_profile
+from fanctrl.sensors import detect_cpu_count
+from fanctrl.non_smc import get_gpu_info, get_cpu_core_temps, get_nvme_temps
 
 
 def usage():
@@ -219,6 +221,42 @@ Profili predefiniti: silent, quiet_daily, heavy_work, render_mode (cap 4500 RPM,
             else:
                 print(f"{key:<8} {'N/A':>7}  {desc:<30}")
 
+
+
+    elif cmd == "cpu-info":
+        print(f"CPU rilevate: {detect_cpu_count()}")
+        all_temps = get_all_temps()
+        cpu_sensors = ["TCAC", "TCAD"]
+        if detect_cpu_count() >= 2:
+            cpu_sensors.extend(["TCBC", "TCBD", "TCBG"])
+        print("Sensori CPU:")
+        for key in cpu_sensors:
+            temp = all_temps.get(key)
+            desc = TEMP_LABELS.get(key, key)
+            if temp is not None:
+                print(f"  {key:<6} {temp:>6}C  {desc}")
+            else:
+                print(f"  {key:<6}  {'N/A':>6}  {desc}")
+        cpu_cores = get_cpu_core_temps()
+        if cpu_cores:
+            print("CPU Core temps (hwmon):")
+            for label, temp in sorted(cpu_cores.items()):
+                print(f"  {label:<6} {temp:>6}C")
+
+    elif cmd == "profile" and len(sys.argv) >= 3 and sys.argv[2] == "dual-auto":
+        cpu_count = detect_cpu_count()
+        current = get_active_profile()
+        suffix = "_dual" if cpu_count >= 2 else ""
+        for base in ["quiet_daily", "heavy_work", "render_mode"]:
+            candidate = base + suffix
+            profiles = list_profiles()
+            if candidate in profiles:
+                print(f"CPU rilevate: {cpu_count}")
+                print(f"Profilo consigliato: {candidate}")
+                if len(sys.argv) >= 4 and sys.argv[3] == "--apply":
+                    require_root()
+                    switch_profile(candidate)
+                break
 
 if __name__ == "__main__":
     main()
